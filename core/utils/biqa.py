@@ -9,27 +9,28 @@ from core.utils import Shrink
 # load images and labels
 def load_data(args):
     # images folder
-    images, name_list = Load_from_Folder(args.data_dir, color="YUV", ct=-1,
-                                         yuv=args.yuv, size=(args.height, args.width))
+    images, name_list = Load_from_Folder(args.data_dir, color="YUV", ct=-1, yuv=args.yuv, size=(args.height, args.width))
 
-    # load labels
-    mos_table = pd.read_csv(os.path.join(args.data_dir, "mos.csv"))
-
-    mos_dict = dict()
-    for index, row in mos_table.iterrows():
-        mos_dict[row['image_name']] = row['MOS']
-
-    mos = []
-    new_index = []
-    for i in range(len(name_list)):
-        if name_list[i] in mos_dict:
-            mos.append(mos_dict[name_list[i]])
-            new_index.append(i)
-
-    # name_list = [name_list[i] for i in new_index]
-    images = [images[i] for i in new_index]
-
-    mos = np.array(mos)
+    # load labels if available
+    mos_file = os.path.join(args.data_dir, "mos.csv")
+    if os.path.exists(mos_file):
+        mos_table = pd.read_csv(mos_file)
+        mos_dict = dict()
+        for index, row in mos_table.iterrows():
+            mos_dict[row['image_name']] = row['MOS']
+        
+        mos = []
+        new_index = []
+        for i in range(len(name_list)):
+            if name_list[i] in mos_dict:
+                mos.append(mos_dict[name_list[i]])
+                new_index.append(i)
+        
+        # name_list = [name_list[i] for i in new_index]
+        images = [images[i] for i in new_index]
+        mos = np.array(mos)
+    else:
+        mos = None
 
     return images, mos
 

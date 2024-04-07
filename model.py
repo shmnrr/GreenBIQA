@@ -1,5 +1,6 @@
 import os
 import time
+import json
 import logging
 import pickle
 from core.utils import Shrink
@@ -16,11 +17,49 @@ class HybridFeatures:
 
         self.trained = False
         self.channel = channel
-
+        
     def load(self, model_dir):
         self.trained = True
         self.dc_pca_kernels, self.channel_pca_kernels, self.relevant_dimension \
             = pickle.load(open(os.path.join(model_dir, "{}_extractor.pickle".format(self.channel)), "rb"))
+        logging.error(f"Model loaded from {model_dir} with dc_pca_kernels: {list(self.dc_pca_kernels.keys())} and channel_pca_kernels: {list(self.channel_pca_kernels.keys())} and relevant_dimension: {list(self.relevant_dimension.keys())}")
+
+    # def load(self, model_dir):
+    #     self.trained = True
+    #     with open(os.path.join(model_dir, f"{self.channel}_extractor.json"), "r") as file:
+    #         data = json.load(file)
+    #         self.dc_pca_kernels = data[0]
+    #         self.channel_pca_kernels = data[1]
+    #         self.relevant_dimension = data[2]
+    #         logging.info(f"FIRST: {str(self.dc_pca_kernels)[:20]}...")
+    #         logging.info(f"SECOND: {str(self.channel_pca_kernels)[:20]}...")
+    #         logging.info(f"THIRD: {str(self.relevant_dimension)[:20]}...")
+    #         logging.info(f"Model loaded from {model_dir} with dc_pca_kernels: {list(self.dc_pca_kernels.keys())} and channel_pca_kernels: {list(self.channel_pca_kernels.keys())} and relevant_dimension: {list(self.relevant_dimension.keys())}")
+
+    #         if self.dc_pca_kernels:
+    #             self.h1_pca = PCA()
+    #             self.h1_pca.components_ = np.array(self.dc_pca_kernels['h1']['components_'])
+    #             self.h1_pca.mean_ = np.array(self.dc_pca_kernels['h1']['mean_']).reshape(1, -1)  # Reshape mean to (1, n_features)
+    #             if 'h2' in self.dc_pca_kernels:
+    #                 self.h2_pca = PCA()
+    #                 self.h2_pca.components_ = np.array(self.dc_pca_kernels['h2']['components_'])
+    #                 self.h2_pca.mean_ = np.array(self.dc_pca_kernels['h2']['mean_']).reshape(1, -1)  # Reshape mean to (1, n_features)
+                    
+    #         if self.channel_pca_kernels:
+    #             self.dc_pca = []
+    #             for dc_pca_data in self.channel_pca_kernels['DC']:
+    #                 dc_pca = PCA()
+    #                 dc_pca.components_ = np.array(dc_pca_data['components_'])
+    #                 dc_pca.mean_ = np.array(dc_pca_data['mean_'])
+    #                 self.dc_pca.append(dc_pca)
+
+    #             self.ac_pca = []
+    #             for ac_pca_data in self.channel_pca_kernels['AC']:
+    #                 ac_pca = PCA()
+    #                 ac_pca.components_ = np.array(ac_pca_data['components_'])
+    #                 ac_pca.mean_ = np.array(ac_pca_data['mean_'])
+    #                 self.ac_pca.append(ac_pca)
+
 
     def save(self, model_dir):
         if not self.trained:
@@ -80,6 +119,58 @@ class HybridFeatures:
 
         return hybrid_features
 
+    # def transform(self, dct_imgs):
+    #     if not self.trained:
+    #         logging.info('Run fit_transform first...')
+    #         return None
+
+    #     logging.info(f'Start extracting features for channel {self.channel}...')
+
+    #     spatial_features = []
+    #     spectral_features = []
+
+    #     # DC
+    #     dc_imgs = dct_imgs[:, :, :, :1]
+    #     n = dc_imgs.shape[0]
+
+    #     # non-overlapping 4x4 PCA: (nx12x12, 16)
+    #     if hasattr(self, 'h1_pca'):
+    #         pca_h1 = self.h1_pca
+    #         dc_h1 = self.block_pca_test(dc_imgs, 4, pca_h1)
+
+    #         # Hop 1 spatial: 2D dc_h1_0 = dc_h1[:, 0].reshape(n, -1)
+    #         dc_h1_0 = dc_h1[:, 0].reshape(n, -1)
+    #         spatial_features.append(np.mean(dc_h1_0, axis=1).reshape(n, -1))  # (n, 1)
+    #         spatial_features.append(np.std(dc_h1_0, axis=1).reshape(n, -1))  # (n, 1)
+
+    #         # Hop 1 spectral: non-overlapping 4x4 PCA -> (nx3x3, 16) -> (n, 9, 16)
+    #         dc_h1_0 = dc_h1_0.reshape(n, 12, 12, 1)
+    #         if hasattr(self, 'h2_pca'):
+    #             pca_h2 = self.h2_pca
+    #             dc_h2 = self.block_pca_test(dc_h1_0, 4, pca_h2)
+    #             spectral_features.append(dc_h2.reshape(n, -1, 16))  # (n, 9, 16)
+
+    #         # Hop 2 channel 1-15: (n, 12, 12, 15)
+    #         dc_h1_ac = dc_h1[:, 1:].reshape(n, 12, 12, -1)
+    #         if hasattr(self, 'dc_pca'):
+    #             dc_h1_ac_spatial, dc_h1_ac_spectral = self.extract_ac_features(dc_h1_ac, 3, 2, 2, self.dc_pca)
+    #         spatial_features.append(dc_h1_ac_spatial)  # (n, 90)
+    #         spectral_features.append(dc_h1_ac_spectral)  # (n, 4, 60)
+
+    #     # AC
+    #     ac_imgs = dct_imgs[:, :, :, 1:]  # (n, 48, 48, 63)
+    #     if hasattr(self, 'ac_pca'):
+    #         ac_spatial, ac_spectral = self.extract_ac_features(ac_imgs, 4, 4, 4, self.ac_pca)
+    #     spatial_features.append(ac_spatial)  # (n, 693)
+    #     spectral_features.append(ac_spectral)  # (n, 9, 1008)
+
+    #     spatial_features = np.concatenate(spatial_features, axis=-1)
+    #     hybrid_features = self.combine_features(spatial_features, spectral_features)
+
+    #     logging.info(f'Finish extracting features for channel {self.channel}...')
+
+    #     return hybrid_features
+
     def transform(self, dct_imgs):
         if not self.trained:
             logging.info('Run fit_transform first...')
@@ -126,7 +217,7 @@ class HybridFeatures:
         # logging.info('Use {:.2f} seconds to extract {} features'.format(time.time() - t, n))
 
         return hybrid_features
-
+    
     def train_ac_features(self, ac_imgs, win1, win2, win3, component='DC'):
         # abs. max pooling: (n, R, R, c) -> (n, r, r, c)
         ac_imgs = np.abs(ac_imgs)
@@ -159,7 +250,7 @@ class HybridFeatures:
         spectral_features = np.concatenate(spectral_features, axis=-1)
 
         return spatial_features, spectral_features
-
+    
     def extract_ac_features(self, ac_imgs, win1, win2, win3, component='DC'):
         # abs. max pooling: (n, R, R, c) -> (n, r, r, c)
         ac_imgs = np.abs(ac_imgs)

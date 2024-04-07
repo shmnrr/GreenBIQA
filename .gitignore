@@ -1,0 +1,4 @@
+/data/ISIC/*.jpg
+**/__pycache__/
+*.pickle
+*.json
