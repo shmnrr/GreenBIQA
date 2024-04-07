@@ -3,6 +3,7 @@ import pickle
 import argparse
 import os
 import time
+import datetime
 import logging
 
 warnings.filterwarnings("ignore")
@@ -65,48 +66,45 @@ def main(args):
 
     logging.info('Loading images from {}...'.format(args.data_dir))
     t = time.time()
-    images, mos = load_data(args)
-    logging.info('{} images loaded in {} secs...'.format(len(images), time.time() - t))
-
-    plt.figure()
-    plt.imsave('test_u.png', images[0][:, :, 1], cmap='gray')
-
-    logging.info('Augmenting data: {} times...'.format(args.num_aug))
-    t = time.time()
-    images, aug_mos = augment(images, mos, args.num_aug)
-    logging.info('Data augmented in {} secs...'.format(time.time() - t))
-
-    logging.info('Extracting DCT coefficients...')
-    t = time.time()
-    train_Y_images_block_dct = jpeg_dct(images, 'Y')
-    train_U_images_block_dct = jpeg_dct(images, 'U')
-    train_V_images_block_dct = jpeg_dct(images, 'V')
-    logging.info('DCT coefficients extracted in {} secs...'.format(time.time() - t))
 
     Y_feature_extractor = HybridFeatures(channel='Y')
     U_feature_extractor = HybridFeatures(channel='U')
     V_feature_extractor = HybridFeatures(channel='V')
 
     if args.do_train:
+        start_time = time.time()
         logging.info('Start training the feature extractor...')
-        t = time.time()
-        y_features = Y_feature_extractor.fit_transform(train_Y_images_block_dct, aug_mos)
-        Y_feature_extractor.save(args.model_dir)
-        u_features = U_feature_extractor.fit_transform(train_U_images_block_dct, aug_mos)
-        U_feature_extractor.save(args.model_dir)
-        v_features = V_feature_extractor.fit_transform(train_V_images_block_dct, aug_mos)
-        V_feature_extractor.save(args.model_dir)
-        logging.info('Feature extractor trained in {} secs...'.format(time.time() - t))
-
-        features = np.concatenate([y_features, u_features, v_features], axis=-1)
-        logging.info('Feature Size = {}'.format(features.shape))
-
-        if args.save:
-            logging.info('Saving extracted features in {}'.format(args.output_dir))
-            pickle.dump(features, open(os.path.join(args.output_dir, "features.pickle"), "wb"))
+        mos = []
+        aug_mos_list = []
+        features_list = []
+        num_batches = 0
+        for batch_images, batch_mos in load_data(args, batch_size=64):
+            num_batches += 1
+            logging.info('Processing batch of size {}...'.format(len(batch_images)))
+            mos.extend(batch_mos)
+            batch_images, aug_mos = augment(batch_images, batch_mos, args.num_aug)
+            aug_mos_list.extend(aug_mos)
+            train_Y_images_block_dct = jpeg_dct(batch_images, 'Y')
+            train_U_images_block_dct = jpeg_dct(batch_images, 'U')
+            train_V_images_block_dct = jpeg_dct(batch_images, 'V')
+            y_features = Y_feature_extractor.fit_transform(train_Y_images_block_dct, aug_mos)
+            u_features = U_feature_extractor.fit_transform(train_U_images_block_dct, aug_mos)
+            v_features = V_feature_extractor.fit_transform(train_V_images_block_dct, aug_mos)
+            features = np.concatenate([y_features, u_features, v_features], axis=-1)
+            logging.info('Feature Size = {}'.format(features.shape))
+            if args.save:
+                logging.info('Saving extracted features in {}'.format(args.output_dir))
+                pickle.dump(features, open(os.path.join(args.output_dir, "features.pickle"), "wb"))
+            features_list.append(features)
+            
+            # Clear the memory after processing each batch
+            del batch_images, aug_mos, train_Y_images_block_dct, train_U_images_block_dct, train_V_images_block_dct
+            del y_features, u_features, v_features, features
+        
+        features = np.concatenate(features_list, axis=0)
+        aug_mos = np.array(aug_mos_list)
 
         n_train = int(0.9 * len(mos)) * args.num_aug
-
         all_index = np.arange(features.shape[0])
         train_index = all_index[:n_train]
         valid_index = all_index[n_train:]
@@ -117,12 +115,12 @@ def main(args):
         eval_set = [(X_train, y_train), (X_valid, y_valid)]
 
         reg = xgb.XGBRegressor(objective='reg:squarederror',
-                               max_depth=5,
-                               n_estimators=1500,
-                               subsample=0.6,
-                               eta=0.08,
-                               colsample_bytree=0.4,
-                               min_child_weight=4)
+                            max_depth=5,
+                            n_estimators=1500,
+                            subsample=0.6,
+                            eta=0.08,
+                            colsample_bytree=0.4,
+                            min_child_weight=4)
 
         logging.info('Start training the regressor...')
         t = time.time()
@@ -148,44 +146,56 @@ def main(args):
         U_feature_extractor.load(args.model_dir)
         V_feature_extractor.load(args.model_dir)
 
-        logging.info('Extracting features for {} patches...'.format(train_V_images_block_dct.shape[0]))
-        t = time.time()
-        y_features = Y_feature_extractor.transform(train_Y_images_block_dct)
-        u_features = U_feature_extractor.transform(train_U_images_block_dct)
-        v_features = V_feature_extractor.transform(train_V_images_block_dct)
-        logging.info('Features for {} images are extracted in {} secs...'
-                     .format(train_V_images_block_dct.shape[0], time.time() - t))
-
-        features = np.concatenate([y_features, u_features, v_features], axis=-1)
-
-        if args.save:
-            logging.info('Saving extracted features in {}'.format(args.output_dir))
-            pickle.dump(features, open(os.path.join(args.output_dir, "features.pickle"), "wb"))
-
-        reg = xgb.XGBRegressor(objective='reg:squarederror',
-                               max_depth=5,
-                               n_estimators=1500,
-                               subsample=0.6,
-                               eta=0.08,
-                               colsample_bytree=0.4,
-                               min_child_weight=4)
-
-        reg.load_model(os.path.join(args.model_dir, 'xgboost.json'))
-
         logging.info('Testing...')
+        mos = []
+        pred_mos_list = []
+        for batch_images, batch_mos in load_data(args, batch_size=64):
+            logging.info('Processing batch of size {}...'.format(len(batch_images)))
+            mos.extend(batch_mos)
+            
+            train_Y_images_block_dct = jpeg_dct(batch_images, 'Y')
+            train_U_images_block_dct = jpeg_dct(batch_images, 'U')
+            train_V_images_block_dct = jpeg_dct(batch_images, 'V')
 
-        pred_mos = []
-        for start in range(0, features.shape[0], args.num_aug):
-            test_features = features[start:start + args.num_aug]
-            pred_test_mos = reg.predict(test_features)
-            pred_mos.append(np.mean(pred_test_mos))
+            y_features = Y_feature_extractor.transform(train_Y_images_block_dct)
+            u_features = U_feature_extractor.transform(train_U_images_block_dct)
+            v_features = V_feature_extractor.transform(train_V_images_block_dct)
 
-        pred_mos = np.array(pred_mos)
-        SRCC = stats.spearmanr(pred_mos, mos)
-        logging.info("SRCC: {}".format(SRCC[0]))
+            features = np.concatenate([y_features, u_features, v_features], axis=-1)
+            
+            if args.save:
+                logging.info('Saving extracted features in {}'.format(args.output_dir))
+                pickle.dump(features, open(os.path.join(args.output_dir, "features.pickle"), "wb"))
 
-        corr, _ = pearsonr(pred_mos, mos)
-        logging.info("PLCC: {}".format(corr))
+            reg = xgb.XGBRegressor(objective='reg:squarederror',
+                                max_depth=5,
+                                n_estimators=1500,
+                                subsample=0.6,
+                                eta=0.08,
+                                colsample_bytree=0.4,
+                                min_child_weight=4)
+
+            reg.load_model(os.path.join(args.model_dir, 'xgboost.json'))
+
+            logging.info('Testing...')
+
+            pred_mos = []
+            for start in range(0, features.shape[0], args.num_aug):
+                test_features = features[start:start + args.num_aug]
+                pred_test_mos = reg.predict(test_features)
+                pred_mos.append(np.mean(pred_test_mos))
+
+            pred_mos = np.array(pred_mos)
+            SRCC = stats.spearmanr(pred_mos, mos)
+            logging.info("SRCC: {}".format(SRCC[0]))
+
+            corr, _ = pearsonr(pred_mos, mos)
+            logging.info("PLCC: {}".format(corr))
+            
+            pred_mos_list.append(np.mean(pred_test_mos))
+            
+        pred_mos = np.array(pred_mos_list)
+        mos = np.array(mos)
         
     if args.do_predict:
         logging.info('Loading pre-trained feature extractors...')
@@ -193,36 +203,40 @@ def main(args):
         U_feature_extractor.load(args.model_dir)
         V_feature_extractor.load(args.model_dir)
 
-        logging.info('Extracting features for {} patches...'.format(train_V_images_block_dct.shape[0]))
-        t = time.time()
-        y_features = Y_feature_extractor.transform(train_Y_images_block_dct)
-        u_features = U_feature_extractor.transform(train_U_images_block_dct)
-        v_features = V_feature_extractor.transform(train_V_images_block_dct)
-        logging.info('Features for {} images are extracted in {} secs...'
-                    .format(train_V_images_block_dct.shape[0], time.time() - t))
-
-        features = np.concatenate([y_features, u_features, v_features], axis=-1)
-
-        reg = xgb.XGBRegressor(objective='reg:squarederror',
-                            max_depth=5,
-                            n_estimators=1500,
-                            subsample=0.6,
-                            eta=0.08,
-                            colsample_bytree=0.4,
-                            min_child_weight=4)
-
-        reg.load_model(os.path.join(args.model_dir, 'xgboost.json'))
-
         logging.info('Predicting...')
+        for batch_images, _ in load_data(args, batch_size=64):
+            logging.info('Processing batch of size {}...'.format(len(batch_images)))
+            
+            train_Y_images_block_dct = jpeg_dct(batch_images, 'Y')
+            train_U_images_block_dct = jpeg_dct(batch_images, 'U')
+            train_V_images_block_dct = jpeg_dct(batch_images, 'V')
 
-        pred_scores = []
-        for start in range(0, features.shape[0], args.num_aug):
-            test_features = features[start:start + args.num_aug]
-            pred_test_scores = reg.predict(test_features)
-            pred_scores.append(np.mean(pred_test_scores))
+            y_features = Y_feature_extractor.transform(train_Y_images_block_dct)
+            u_features = U_feature_extractor.transform(train_U_images_block_dct)
+            v_features = V_feature_extractor.transform(train_V_images_block_dct)
 
-        pred_scores = np.array(pred_scores)
-        logging.info("Predicted scores: {}".format(pred_scores))
+            features = np.concatenate([y_features, u_features, v_features], axis=-1)
+
+            reg = xgb.XGBRegressor(objective='reg:squarederror',
+                                max_depth=5,
+                                n_estimators=1500,
+                                subsample=0.6,
+                                eta=0.08,
+                                colsample_bytree=0.4,
+                                min_child_weight=4)
+
+            reg.load_model(os.path.join(args.model_dir, 'xgboost.json'))
+
+            logging.info('Predicting...')
+
+            pred_scores = []
+            for start in range(0, features.shape[0], args.num_aug):
+                test_features = features[start:start + args.num_aug]
+                pred_test_scores = reg.predict(test_features)
+                pred_scores.append(np.mean(pred_test_scores))
+
+            pred_scores = np.array(pred_scores)
+            logging.info("Predicted scores: {}".format(pred_scores))
 
 
 if __name__ == '__main__':

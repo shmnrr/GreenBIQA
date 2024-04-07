@@ -1,16 +1,44 @@
 import os
+import logging
 import numpy as np
 import pandas as pd
 from scipy.fftpack import dct
-from core.utils.load_img import Load_from_Folder
+from core.utils.load_img import Load_from_Folder, Load_Name_from_Folder, Load_Images
 from core.utils import Shrink
 
 
 # load images and labels
-def load_data(args):
-    # images folder
-    images, name_list = Load_from_Folder(args.data_dir, color="YUV", ct=-1, yuv=args.yuv, size=(args.height, args.width))
+# def load_data(args):
+#     # images folder
+#     images, name_list = Load_from_Folder(args.data_dir, color="YUV", ct=-1, yuv=args.yuv, size=(args.height, args.width))
 
+#     # load labels if available
+#     mos_file = os.path.join(args.data_dir, "mos.csv")
+#     if os.path.exists(mos_file):
+#         mos_table = pd.read_csv(mos_file)
+#         mos_dict = dict()
+#         for index, row in mos_table.iterrows():
+#             mos_dict[row['image_name']] = row['MOS']
+        
+#         mos = []
+#         new_index = []
+#         for i in range(len(name_list)):
+#             if name_list[i] in mos_dict:
+#                 mos.append(mos_dict[name_list[i]])
+#                 new_index.append(i)
+        
+#         # name_list = [name_list[i] for i in new_index]
+#         images = [images[i] for i in new_index]
+#         mos = np.array(mos)
+#     else:
+#         mos = None
+
+#     return images, mos
+
+def load_data(args, batch_size=32):
+    # images folder
+    name_list = Load_Name_from_Folder(args.data_dir)
+    
     # load labels if available
     mos_file = os.path.join(args.data_dir, "mos.csv")
     if os.path.exists(mos_file):
@@ -18,22 +46,29 @@ def load_data(args):
         mos_dict = dict()
         for index, row in mos_table.iterrows():
             mos_dict[row['image_name']] = row['MOS']
-        
-        mos = []
-        new_index = []
-        for i in range(len(name_list)):
-            if name_list[i] in mos_dict:
-                mos.append(mos_dict[name_list[i]])
-                new_index.append(i)
-        
-        # name_list = [name_list[i] for i in new_index]
-        images = [images[i] for i in new_index]
-        mos = np.array(mos)
     else:
-        mos = None
+        mos_dict = None
 
-    return images, mos
-
+    num_batches = (len(name_list) + batch_size - 1) // batch_size
+    for i in range(num_batches):
+        logging.info(f"Loading batch {i+1}/{num_batches}...")
+        batch_name_list = name_list[i*batch_size : (i+1)*batch_size]
+        batch_name_list = [os.path.join(args.data_dir, name) for name in batch_name_list]
+        
+        batch_images = Load_Images(batch_name_list, color='YUV')
+        
+        if mos_dict is not None:
+            batch_mos = []
+            for name in batch_name_list:
+                name = os.path.basename(name)
+                if name in mos_dict:
+                    batch_mos.append(mos_dict[name])
+            batch_mos = np.array(batch_mos) if len(batch_mos) > 0 else None
+        else:
+            batch_mos = None
+        
+        yield batch_images, batch_mos
+        
 
 # data augmentation
 def augment(images, mos, num_aug):
