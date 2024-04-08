@@ -22,6 +22,7 @@ def parse_args(args=None):
         usage='main.py [<args>] [-h | --help]'
     )
 
+    parser.add_argument('--do_predict', action='store_true', help='Perform prediction on images in the data directory')
     parser.add_argument('--do_train', action='store_true')
     parser.add_argument('--do_test', action='store_true')
     parser.add_argument('--yuv', action='store_true')
@@ -184,6 +185,43 @@ def main(args):
 
         corr, _ = pearsonr(pred_mos, mos)
         logging.info("PLCC: {}".format(corr))
+        
+    if args.do_predict:
+        logging.info('Loading pre-trained feature extractors...')
+        Y_feature_extractor.load(args.model_dir)
+        U_feature_extractor.load(args.model_dir)
+        V_feature_extractor.load(args.model_dir)
+
+        logging.info('Extracting features for {} patches...'.format(train_V_images_block_dct.shape[0]))
+        t = time.time()
+        y_features = Y_feature_extractor.transform(train_Y_images_block_dct)
+        u_features = U_feature_extractor.transform(train_U_images_block_dct)
+        v_features = V_feature_extractor.transform(train_V_images_block_dct)
+        logging.info('Features for {} images are extracted in {} secs...'
+                    .format(train_V_images_block_dct.shape[0], time.time() - t))
+
+        features = np.concatenate([y_features, u_features, v_features], axis=-1)
+
+        reg = xgb.XGBRegressor(objective='reg:squarederror',
+                            max_depth=5,
+                            n_estimators=1500,
+                            subsample=0.6,
+                            eta=0.08,
+                            colsample_bytree=0.4,
+                            min_child_weight=4)
+
+        reg.load_model(os.path.join(args.model_dir, 'xgboost.json'))
+
+        logging.info('Predicting...')
+
+        pred_scores = []
+        for start in range(0, features.shape[0], args.num_aug):
+            test_features = features[start:start + args.num_aug]
+            pred_test_scores = reg.predict(test_features)
+            pred_scores.append(np.mean(pred_test_scores))
+
+        pred_scores = np.array(pred_scores)
+        logging.info("Predicted scores: {}".format(pred_scores))
 
 
 if __name__ == '__main__':

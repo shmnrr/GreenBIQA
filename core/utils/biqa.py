@@ -10,7 +10,7 @@ from core.utils import Shrink
 def load_data(args):
     # images folder
     images, name_list = Load_from_Folder(args.data_dir, color="YUV", ct=-1,
-                                         yuv=args.yuv, size=(args.height, args.width))
+                                         yuv=args.yuv, size=(args.height, args.width), train=args.do_train)
 
     # load labels
     mos_table = pd.read_csv(os.path.join(args.data_dir, "mos.csv"))

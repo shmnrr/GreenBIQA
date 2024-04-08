@@ -10,16 +10,21 @@ from skimage.measure import block_reduce
 from core.utils.color_space import BGR2RGB, BGR2YUV
 
 
-def Load_from_Folder(folder, color='RGB', ct=1, yuv=False, size=None):
+def Load_from_Folder(folder, color='RGB', ct=1, yuv=False, size=None, train=False):
     name = os.listdir(folder)
     name.sort()
     img = []
     Y, U, V = [], [], []
     name_list = []
-
     h, w = size
-
-    for n in name:
+    
+    # Calculate the split index based on train flag
+    logging.info(f"Loading {'train' if train else 'test'} data...")
+    split_index = int(len(name) * 0.8)
+    selected_names = name[:split_index] if train else name[split_index:]
+    logging.info(f"Split index: {split_index}")
+    
+    for n in selected_names:
         if yuv:
             if n.split('.')[-1] != 'yuv':
                 continue
@@ -30,9 +35,7 @@ def Load_from_Folder(folder, color='RGB', ct=1, yuv=False, size=None):
             data_Y = [int(x) for x in data_Y]
             data_U = [int(x) for x in data_U]
             data_V = [int(x) for x in data_V]
-
             X = np.zeros((h, w, 3))
-
             X[:, :, 0] = np.array(data_Y).reshape(h, w).astype('float32')
             shrunk_u = np.array(data_U).reshape(h//2, w//2).astype('float32')
             shrunk_v = np.array(data_V).reshape(h//2, w//2).astype('float32')
@@ -41,12 +44,11 @@ def Load_from_Folder(folder, color='RGB', ct=1, yuv=False, size=None):
             img.append(X)
             name_list.append(n)
             continue
-
+        
         X = cv2.imread(folder+'/'+n)
         if X is None:
             continue
         name_list.append(n)
-
         if color == 'BGR':
             img.append(X)
         elif color == 'RGB':
@@ -61,9 +63,11 @@ def Load_from_Folder(folder, color='RGB', ct=1, yuv=False, size=None):
         else:
             logging.info('No such color type!, Color must be BGR, RGB, YUV, YUV444, or YUV420!')
             break
+        
         ct -= 1
         if ct == 0:
             break
+        
     if color == 'BGR' or color == 'RGB' or color == 'YUV444' or color == 'YUV':
         return img, name_list
     elif color == 'YUV420':
