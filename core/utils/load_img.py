@@ -20,7 +20,7 @@ def Load_from_Folder(folder, color='RGB', ct=1, yuv=False, size=None, train=Fals
     
     # Calculate the split index based on train flag
     logging.info(f"Loading {'train' if train else 'test'} data...")
-    split_index = int(len(name) * 0.9) + 1
+    split_index = int(len(name) * 0.9) - 1
     selected_names = name[:split_index] if train else name[split_index:]
     logging.info(f"Split index: {split_index}")
     
