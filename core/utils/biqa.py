@@ -31,7 +31,11 @@ def load_data(args):
 
     mos = np.array(mos)
 
-    return images, mos
+    for i in range(0, len(images), args.batch_size):
+        start = i
+        end = min(i + args.batch_size, len(images))
+        yield images[start:end], mos[start:end]
+    # return images, mos
 
 
 # data augmentation
