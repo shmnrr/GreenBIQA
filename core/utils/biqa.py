@@ -5,37 +5,59 @@ from scipy.fftpack import dct
 from core.utils.load_img import Load_from_Folder
 from core.utils import Shrink
 
-
-# load images and labels
 def load_data(args):
     # images folder
-    images, name_list = Load_from_Folder(args.data_dir, color="YUV", ct=-1,
-                                         yuv=args.yuv, size=(args.height, args.width), train=args.do_train)
+    images_and_names_generator = Load_from_Folder(args.data_dir, color="YUV", ct=-1, yuv=args.yuv, size=(args.height, args.width), train=args.do_train, batch_size=args.batch_size)
 
     # load labels
     mos_table = pd.read_csv(os.path.join(args.data_dir, "mos.csv"))
-
     mos_dict = dict()
     for index, row in mos_table.iterrows():
         mos_dict[row['image_name']] = row['MOS']
 
-    mos = []
-    new_index = []
-    for i in range(len(name_list)):
-        if name_list[i] in mos_dict:
-            mos.append(mos_dict[name_list[i]])
-            new_index.append(i)
+    for images, name_list in images_and_names_generator:
+        mos = []
+        new_index = []
+        for i in range(len(name_list)):
+            if name_list[i] in mos_dict:
+                mos.append(mos_dict[name_list[i]])
+                new_index.append(i)
 
-    # name_list = [name_list[i] for i in new_index]
-    images = [images[i] for i in new_index]
+        images = [images[i] for i in new_index]
+        mos = np.array(mos)
+        
+        yield images, mos
 
-    mos = np.array(mos)
+# load images and labels
+# def load_data(args):
+#     # images folder
+#     images, name_list = Load_from_Folder(args.data_dir, color="YUV", ct=-1,
+#                                          yuv=args.yuv, size=(args.height, args.width), train=args.do_train)
 
-    for i in range(0, len(images), args.batch_size):
-        start = i
-        end = min(i + args.batch_size, len(images))
-        yield images[start:end], mos[start:end]
-    # return images, mos
+#     # load labels
+#     mos_table = pd.read_csv(os.path.join(args.data_dir, "mos.csv"))
+
+#     mos_dict = dict()
+#     for index, row in mos_table.iterrows():
+#         mos_dict[row['image_name']] = row['MOS']
+
+#     mos = []
+#     new_index = []
+#     for i in range(len(name_list)):
+#         if name_list[i] in mos_dict:
+#             mos.append(mos_dict[name_list[i]])
+#             new_index.append(i)
+
+#     # name_list = [name_list[i] for i in new_index]
+#     images = [images[i] for i in new_index]
+
+#     mos = np.array(mos)
+
+#     for i in range(0, len(images), args.batch_size):
+#         start = i
+#         end = min(i + args.batch_size, len(images))
+#         yield images[start:end], mos[start:end]
+#     # return images, mos
 
 
 # data augmentation
