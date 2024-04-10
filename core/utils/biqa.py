@@ -27,6 +27,10 @@ def load_data(args):
         mos = np.array(mos)
         
         yield images, mos
+        
+        # Clear the current batch from memory
+        del images
+        del mos
 
 # load images and labels
 # def load_data(args):

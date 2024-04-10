@@ -226,6 +226,9 @@ def main(args):
             pred_scores = np.array(pred_scores)
             logging.info("Predicted scores: {}".format(pred_scores))
     
+        # Clear the current batch from memory
+        del images
+        del mos
 
     if args.do_train:
         logging.info("Saving the feature extractors...")
