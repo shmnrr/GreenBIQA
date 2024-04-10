@@ -1,4 +1,5 @@
 /data/ISIC/*.jpg
+/data/ISIC_448/*.jpg
 **/__pycache__/
 *.pickle
 *.json

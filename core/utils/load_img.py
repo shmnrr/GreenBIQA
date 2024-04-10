@@ -88,6 +88,7 @@ def Load_from_Folder(folder, color='RGB', ct=1, yuv=False, size=None, train=Fals
     selected_names = name[:split_index] if train else name[split_index:]
     logging.info(f"Split index: {split_index}")
     
+    images_count = 0
     batch_count = 0
     for n in selected_names:
         if yuv:
@@ -135,11 +136,15 @@ def Load_from_Folder(folder, color='RGB', ct=1, yuv=False, size=None, train=Fals
         
         if batch_size is not None and len(img) % batch_size == 0:
             batch_count += 1
+            images_count += len(img)
+            logging.info(f"Remaining images: {len(selected_names) - images_count}")
             logging.info(f"Batch {batch_count} with {batch_size} images")
             if color == 'BGR' or color == 'RGB' or color == 'YUV444' or color == 'YUV':
                 yield img, name_list
             elif color == 'YUV420':
                 yield Y, U, V, name_list
+            img = []
+            name_list = []
         
     batch_count += 1
     logging.info(f"Final batch {batch_count} with {len(img) % batch_size} images")
