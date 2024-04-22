@@ -4,6 +4,7 @@ import argparse
 import os
 import time
 import logging
+import csv
 
 warnings.filterwarnings("ignore")
 
@@ -68,10 +69,7 @@ def main(args):
     # images, mos = load_data(args)
     # logging.info('{} images loaded in {} secs...'.format(len(images), time.time() - t))
     
-    Y_feature_extractor = HybridFeatures(channel='Y')
-    U_feature_extractor = HybridFeatures(channel='U')
-    V_feature_extractor = HybridFeatures(channel='V')
-
+    results = []
     batch_num = 0
     for images, mos in load_data(args):
         batch_num += 1
@@ -93,6 +91,10 @@ def main(args):
         logging.info('DCT coefficients extracted in {} secs...'.format(time.time() - t))
         
         if args.do_train:
+            Y_feature_extractor = HybridFeatures(channel='Y')
+            U_feature_extractor = HybridFeatures(channel='U')
+            V_feature_extractor = HybridFeatures(channel='V')
+    
             logging.info('Start training the feature extractor...')
             t = time.time()
             y_features = Y_feature_extractor.fit_transform(train_Y_images_block_dct, aug_mos)
@@ -145,6 +147,11 @@ def main(args):
             logging.info("PLCC: {}".format(corr))
 
         if args.do_test:
+            start_time = time.time()
+            Y_feature_extractor = HybridFeatures(channel='Y')
+            U_feature_extractor = HybridFeatures(channel='U')
+            V_feature_extractor = HybridFeatures(channel='V')
+    
             logging.info('Loading pre-trained feature extractors...')
             Y_feature_extractor.load(args.model_dir)
             U_feature_extractor.load(args.model_dir)
@@ -177,19 +184,38 @@ def main(args):
             logging.info('Testing...')
 
             pred_mos = []
+            start_inference_time = time.time()
             for start in range(0, features.shape[0], args.num_aug):
                 test_features = features[start:start + args.num_aug]
                 pred_test_mos = reg.predict(test_features)
                 pred_mos.append(np.mean(pred_test_mos))
-
+            
+            end_time = time.time()
+            
+            # Calculate time durations in miliseconds
+            initialization_time = (start_inference_time - start_time) * 1000
+            inference_time = (end_time - start_inference_time) * 1000
+            full_time = (end_time - start_time) * 1000
+                
+                
             pred_mos = np.array(pred_mos)
-            SRCC = stats.spearmanr(pred_mos, mos)
-            logging.info("SRCC: {}".format(SRCC[0]))
+            srcc = stats.spearmanr(pred_mos, mos)[0]
+            logging.info("SRCC: {}".format(srcc))
 
-            corr, _ = pearsonr(pred_mos, mos)
-            logging.info("PLCC: {}".format(corr))
+            plcc, _ = pearsonr(pred_mos, mos)
+            logging.info("PLCC: {}".format(plcc))
+            
+            krcc = stats.kendalltau(pred_mos, mos)[0]
+            logging.info("KRCC: {}".format(krcc))
+            
+            results.append([plcc, krcc, srcc, initialization_time, inference_time, full_time])
+                
             
         if args.do_predict:
+            Y_feature_extractor = HybridFeatures(channel='Y')
+            U_feature_extractor = HybridFeatures(channel='U')
+            V_feature_extractor = HybridFeatures(channel='V')
+    
             logging.info('Loading pre-trained feature extractors...')
             Y_feature_extractor.load(args.model_dir)
             U_feature_extractor.load(args.model_dir)
@@ -229,6 +255,19 @@ def main(args):
         # Clear the current batch from memory
         del images
         del mos
+        
+    # Calculate the average results
+    results = np.array(results)
+    results = np.mean(results, axis=0)
+    results = results.tolist()
+
+    # Convert the results to a list of lists
+    results_list = [results]
+
+    with open(os.path.join(args.output_dir, 'greenBIQA.csv'), 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['plcc', 'krcc', 'srcc', 'initialization_time', 'inference_time', 'full_time'])
+        writer.writerows(results_list)
 
     if args.do_train:
         logging.info("Saving the feature extractors...")
